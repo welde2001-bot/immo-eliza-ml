@@ -207,4 +207,17 @@ marimo/_lsp/
 __marimo__/
 # VS Code settings
 .vscode/
+# Models
+models/
+*.pkl
+*.joblib
+*.sav
+*.pt
+*.h5
+*.model
+
+
+# Python cache
+__pycache__/
+*.pyc
 
