@@ -1,136 +1,127 @@
-import pandas as pd
-import numpy as np
-import os
+# train_xgboost_log.py
 
-from sklearn.model_selection import GroupShuffleSplit, RandomizedSearchCV
+import numpy as np
+import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-
 from xgboost import XGBRegressor
+from sklearn.model_selection import train_test_split
 import joblib
+import os
 
 
-def group_split(df, group_col="locality_name"):
-    splitter = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
-    groups = df[group_col]
-    train_idx, test_idx = next(splitter.split(df, groups=groups))
+def train_xgboost_log_target(
+    df: pd.DataFrame,
+    target: str = "price",
+    save_path: str = "models/xgboost_log_model.pkl"
+):
+    """
+    Train XGBoost using a log-transformed target.
 
-    return df.iloc[train_idx], df.iloc[test_idx]
+    Workflow:
+    - Remove missing target
+    - Train/test split
+    - log1p target transform
+    - OneHotEncoder for categoricals
+    - Passthrough for numericals
+    - XGBoost model
+    - Back-transform predictions using expm1
+    - Save final pipeline (preprocessing + model)
+    """
 
+    # ----------------------------------------------------
+    # 1. Remove missing target values
+    # ----------------------------------------------------
+    df = df[df[target].notna()].copy()
 
-def remove_train_outliers(X, y):
-    df = X.copy()
-    df["target"] = y
+    # ----------------------------------------------------
+    # 2. Define features and log-transformed target
+    # ----------------------------------------------------
+    X = df.drop(columns=[target])
+    y = np.log1p(df[target])
 
-    # living area IQR
-    if "living_area" in df.columns:
-        Q1 = df["living_area"].quantile(0.25)
-        Q3 = df["living_area"].quantile(0.75)
-        IQR = Q3 - Q1
-        df = df[(df["living_area"] >= Q1 - 1.5 * IQR) &
-                (df["living_area"] <= Q3 + 1.5 * IQR)]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.20, random_state=42
+    )
 
-    if "number_rooms" in df.columns:
-        df = df[df["number_rooms"].fillna(0) <= 12]
-
-    y_clean = df["target"]
-    X_clean = df.drop(columns=["target"])
-
-    print("Train after outlier removal:", X_clean.shape)
-    return X_clean, y_clean
-
-
-def train_xgboost(df, target="price", save_path="models/xgboost_geo_tuned.pkl"):
-
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
-    # Split
-    train_df, test_df = group_split(df, "locality_name")
-
-    y_train_raw = train_df[target]
-    y_test_raw = test_df[target]
-
-    X_train_raw = train_df.drop(columns=[target])
-    X_test = test_df.drop(columns=[target])
-
-    # Outliers
-    X_train, y_train_raw = remove_train_outliers(X_train_raw, y_train_raw)
-
-    # log-transform
-    y_train = np.log1p(y_train_raw)
-    y_test = np.log1p(y_test_raw)
-
-    # Categorical / numeric
+    # ----------------------------------------------------
+    # 3. Column selection
+    # ----------------------------------------------------
     cat_cols = X_train.select_dtypes(include=["object", "string"]).columns.tolist()
     num_cols = X_train.select_dtypes(include=["number"]).columns.tolist()
 
     preprocessor = ColumnTransformer([
-        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=True), cat_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
         ("num", "passthrough", num_cols)
     ])
 
+    # ----------------------------------------------------
+    # 4. XGBoost Model Definition
+    # ----------------------------------------------------
     model = XGBRegressor(
+        n_estimators=400,
+        learning_rate=0.05,
+        max_depth=4,
+        subsample=0.8,
+        colsample_bytree=0.8,
         objective="reg:squarederror",
-        tree_method="hist",
-        random_state=42
+        random_state=42,
+        tree_method="hist"
     )
 
     pipe = Pipeline([
-        ("preprocessor", preprocessor),
+        ("preprocess", preprocessor),
         ("model", model)
     ])
 
-    param_dist = {
-        "model__max_depth": [4, 6, 8],
-        "model__learning_rate": [0.03, 0.05, 0.1],
-        "model__n_estimators": [400, 600, 900],
-        "model__subsample": [0.6, 0.8],
-        "model__colsample_bytree": [0.6, 0.8],
-        "model__min_child_weight": [1, 5, 10],
-        "model__gamma": [0, 1],
-        "model__reg_lambda": [1, 3, 5]
+    # ----------------------------------------------------
+    # 5. Train the Model
+    # ----------------------------------------------------
+    pipe.fit(X_train, y_train)
+
+    # ----------------------------------------------------
+    # 6. Predict and Back-Transform
+    # ----------------------------------------------------
+    train_preds = np.expm1(pipe.predict(X_train))
+    test_preds = np.expm1(pipe.predict(X_test))
+
+    y_train_real = np.expm1(y_train)
+    y_test_real = np.expm1(y_test)
+
+    # ----------------------------------------------------
+    # 7. Evaluation Metrics
+    # ----------------------------------------------------
+    results = {
+        "Train MAE": mean_absolute_error(y_train_real, train_preds),
+        "Train RMSE": np.sqrt(mean_squared_error(y_train_real, train_preds)),
+        "Train R2": r2_score(y_train_real, train_preds),
+
+        "Test MAE": mean_absolute_error(y_test_real, test_preds),
+        "Test RMSE": np.sqrt(mean_squared_error(y_test_real, test_preds)),
+        "Test R2": r2_score(y_test_real, test_preds)
     }
 
-    search = RandomizedSearchCV(
-        estimator=pipe,
-        param_distributions=param_dist,
-        n_iter=20,
-        cv=3,
-        scoring="neg_root_mean_squared_error",
-        n_jobs=-1,
-        verbose=1,
-        random_state=42
-    )
+    # ----------------------------------------------------
+    # 8. Save Final Model Pipeline
+    # ----------------------------------------------------
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    joblib.dump(pipe, save_path)
 
-    search.fit(X_train, y_train)
-    best_model = search.best_estimator_
+    print(f"Model saved to: {save_path}")
+    print("\n===== XGBoost (Log-Transformed Target) Results =====")
+    for k, v in results.items():
+        print(f"{k}: {v:,.2f}")
 
-    preds_train = np.expm1(best_model.predict(X_train))
-    preds_test = np.expm1(best_model.predict(X_test))
+    return pipe, results
 
-    mae_train = mean_absolute_error(y_train_raw, preds_train)
-    rmse_train = np.sqrt(mean_squared_error(y_train_raw, preds_train))
-    r2_train = r2_score(y_train_raw, preds_train)
 
-    mae_test = mean_absolute_error(y_test_raw, preds_test)
-    rmse_test = np.sqrt(mean_squared_error(y_test_raw, preds_test))
-    r2_test = r2_score(y_test_raw, preds_test)
-
-    print("\n===== FINAL XGBOOST RESULTS =====")
-    print("\n--- Train ---")
-    print(f"MAE: {mae_train:,.2f}")
-    print(f"RMSE: {rmse_train:,.2f}")
-    print(f"R²: {r2_train:.4f}")
-
-    print("\n--- Test ---")
-    print(f"MAE: {mae_test:,.2f}")
-    print(f"RMSE: {rmse_test:,.2f}")
-    print(f"R²: {r2_test:.4f}")
-
-    # Save model
-    joblib.dump(best_model, save_path)
-    print(f"Model saved to {save_path}")
-
-    return best_model
+if __name__ == "__main__":
+    # Example usage if run standalone:
+    df_path = "data/processed/cleaned_v2.csv"
+    if os.path.exists(df_path):
+        df = pd.read_csv(df_path)
+        train_xgboost_log_target(df)
+    else:
+        print(f"Dataset not found: {df_path}")
