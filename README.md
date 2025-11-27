@@ -6,12 +6,13 @@ A streamlined machine-learning workflow for predicting Belgian real estate price
 
 ## 📑 Table of Contents
 - [Project Overview](#-project-overview)
-- [Cleaning Pipeline](#-cleaning-pipeline)
+- [Data Cleaning Pipeline](#-data-cleaning-pipeline)
 - [Feature Engineering](#-feature-engineering)
+- [Preprocessing Pipeline](#-preprocessing-pipeline)
 - [Model Development](#-model-development)
 - [Project Structure](#%EF%B8%8F-project-structure)
 - [Requirements](#-requirements)
-- [How to Run](#how-to-run)
+- [How to Run](#how-to-run-it)
 - [Future Improvements](#future-improvements)
 - [Limitations](#%EF%B8%8F-limitations)
 - [Contributors](#-contributors)
@@ -30,7 +31,7 @@ The focus is on:
 
 ---
 
-## 🧹 Cleaning Pipeline
+## 🧹 Data Cleaning Pipeline
 
 The unified cleaning step (`enhanced_clean`) handles:
 
@@ -44,7 +45,6 @@ The unified cleaning step (`enhanced_clean`) handles:
 Output: `cleaned_v2.csv`
 
 ---
-
 ## 🧬 Feature Engineering
 
 Located in `src/feature_engineering.py`.
@@ -60,6 +60,34 @@ Key engineered features include:
 Output: `feature_engineered.csv`
 
 ---
+## 🔧 Preprocessing Pipeline
+
+The preprocessing pipeline prepares the dataset for all models and ensures consistent, leak-free transformations.
+
+**Main steps:**
+
+- **Train/Test Split (80/20):**  
+  The dataset is split once to keep evaluation consistent.
+
+- **Outlier Removal (training only):**  
+  IQR filtering is applied only to the training set for `price`, `living_area`, and `number_rooms` to avoid leaking information into the test set.
+
+- **Column Detection:**  
+  Numeric and categorical columns are automatically identified.  
+  `postal_code` is always treated as categorical.
+
+- **Numeric Pipeline:**  
+  - Median imputation  
+  - Standard scaling  
+
+- **Categorical Pipeline:**  
+  - Most frequent imputation  
+  - One-Hot Encoding with unknown-category handling  
+
+- **ColumnTransformer:**  
+  The numeric and categorical pipelines are combined into a unified preprocessing block used by all models.
+
+This ensures that every model receives clean, encoded, and scaled input data with no leakage between training and testing.
 
 ## 🤖 Model Development
 
@@ -69,6 +97,16 @@ Models evaluated:
 - **Random Forest** — moderate but unstable  
 - **XGBoost (raw target)** — improved but high variance  
 - **XGBoost (log-target)** — **best model**, stable and consistent (test R² ~0.65)
+
+### 📊 Model Performance Comparison Tuned Linear regression VS Tuned XGBoost
+
+| Model                     | MAE (Train) | RMSE (Train) | R² (Train) | MAE (Test)  | RMSE (Test)  | R² (Test) |
+|---------------------------|-------------|--------------|------------|-------------|--------------|-----------|
+| Ridge                     | 17,134.86   | 23,333.16    | 0.9653     | 86,478.20   | 168,409.36   | 0.5548    |
+| Lasso                     | 45,320.05   | 56,236.46    | 0.7987     | 86,777.13   | 169,305.18   | 0.5500    |
+| ElasticNet                | 31,640.48   | 42,982.00    | 0.8824     | 86,785.47   | 168,936.84   | 0.5520    |
+| XGBoost (Tuned, No Val)   | 71,626.79   | 124,144.21   | 0.7837     | 81,431.27   | 157,652.82   | 0.6100    |
+
 
 
 
@@ -83,12 +121,12 @@ immo-eliza-ml/
 │   ├── cleaning.py
 │   ├── preprocessing.py
 │   ├── train_xgboost_log.py
-│
+│   ├── Lin_reg.py
 ├── data/
 │   ├── raw/
 │   ├── processed/
 │
-└── models/
+└── models/ 
 
 
 
