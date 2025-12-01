@@ -1,10 +1,12 @@
 # immo-eliza-ml
 
-A streamlined machine-learning workflow for predicting Belgian real estate prices. It includes data cleaning, feature engineering, multiple model baselines, and a final tuned log-target XGBoost model.
+A streamlined machine-learning workflow for predicting Belgian real estate prices. It includes data cleaning, feature engineering, linear baselines first (Ridge, Lasso, ElasticNet), additional non-linear models for comparison, and a final tuned log-target XGBoost model for the best stability and accuracy.
+
 
 ---
 
 ## 📑 Table of Contents
+
 - [Project Overview](#-project-overview)
 - [Data Cleaning Pipeline](#-data-cleaning-pipeline)
 - [Feature Engineering](#-feature-engineering)
@@ -21,12 +23,12 @@ A streamlined machine-learning workflow for predicting Belgian real estate price
 
 ## 🔎 Project Overview
 
-This project predicts real-estate prices in Belgium using structured tabular data.  
+This project predicts real-estate prices in Belgium using structured data.  
 The focus is on:
 
 - Clean, leak-free preprocessing  
-- Postal-code–based spatial feature engineering  
-- Evaluation of linear and ensemble models  
+- Reliable location features using an official postal-code reference (postal_code → province) 
+- Evaluation of linear and o models  
 - A final robust **log-target XGBoost** model achieving the best stability and accuracy.
 
 ---
@@ -45,21 +47,20 @@ The unified cleaning step (`enhanced_clean`) handles:
 Output: `cleaned_v2.csv`
 
 ---
+
+## 🧬 Feature Engineering
+
 ## 🧬 Feature Engineering
 
 Located in `src/feature_engineering.py`.
 
-Key engineered features include:
-
-- `postal_prefix` (numeric extraction)
-- Region and density groups derived from postal codes
-- Build-year signals (age, decade, age flags)
-- Province → Region mapping
-- Boolean flag features for garden, terrace, swimming pool
-
-Output: `feature_engineered.csv`
+Adds:
+- `region` (Flanders/Wallonia/Brussels) mapped from `province`
+- Build-year features (`house_age`, `build_decade`, age flags)
+- Boolean flags (`garden_flag`, `terrace_flag`, `swimming_pool_flag`)
 
 ---
+
 ## 🔧 Preprocessing Pipeline
 
 The preprocessing pipeline prepares the dataset for all models and ensures consistent, leak-free transformations.
@@ -110,6 +111,7 @@ Models evaluated:
 
 
 
+
 ## 🗂️ Project Structure
 
 ```bash
@@ -125,7 +127,7 @@ immo-eliza-ml/
 ├── data/
 │   ├── raw/
 │   ├── processed/
-│
+│   ├── zipcodes_num_nl_2025.csv
 └── models/ 
 
 
@@ -155,12 +157,15 @@ pip install -r requirements.txt
 - Additional feature engineering
 - Cross-validation for more robust evaluation
 - Testing alternative models (e.g., LightGBM, CatBoost)
+
 ## ⚠️ Limitations 
 
 The model relies heavily on the quality and comprehensiveness of the input data. It does not account for market trends or economic conditions. The model's predictions are specific to Belgium and may not generalize well to other regions. 
 
 ## 👥 Contributors 
+
 This project is part of AI & Data Science Bootcamp training at **</becode** and it was done by: 
+
 - Welederufeal Tadege [LinkedIn](https://www.linkedin.com/in/) | [Github](https://github.com/welde2001-bot) 
 under the supervision of AI & data science coach ***Vanessa Rivera Quinones***
 
